@@ -1,6 +1,5 @@
 #!/bin/bash
 # Nucleus Agent Reinstall v0.18.0
-# Downloads from GitHub releases and installs with correct DEVICE_ID from factory file
 # Usage: curl -sL https://raw.githubusercontent.com/JuanM2209/agent-fix/master/fix-agent.sh | bash
 
 set -e
@@ -25,10 +24,10 @@ else
   read -r DEVICE_SERIAL
 fi
 
-# 2. Stop and remove ALL agent containers (old and new)
+# 2. Stop and remove ONLY remote-s containers (NOT remote-support)
 echo ""
-echo "[2/6] Cleaning up old containers..."
-for c in remote-s remote-s-backup remote-support; do
+echo "[2/6] Cleaning up old remote-s containers..."
+for c in remote-s remote-s-backup; do
   if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
     echo "  Stopping $c..."
     docker stop "$c" 2>/dev/null || true
@@ -74,14 +73,11 @@ docker run -d \
 
 echo "  -> Container created"
 
-# Wait and show logs
-echo ""
-echo "Waiting 8s for startup..."
 sleep 8
 
 echo ""
 echo "=== Container Status ==="
-docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" | grep "$CONTAINER_NAME"
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" | head -5
 
 echo ""
 echo "=== Recent Logs ==="
