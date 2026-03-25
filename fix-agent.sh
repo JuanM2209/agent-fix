@@ -1,11 +1,11 @@
 #!/bin/bash
 # Nucleus Agent Fix — updates token config and restarts container
-# Usage: curl -sL https://raw.githubusercontent.com/JML-Nucleus/agent-fix/main/fix-agent.sh | bash
+# Usage: curl -sL https://raw.githubusercontent.com/JuanM2209/agent-fix/master/fix-agent.sh | bash
 
 set -e
 
 CONTAINER="remote-s"
-CONFIG_URL="https://raw.githubusercontent.com/JML-Nucleus/agent-fix/main/agent.toml"
+CONFIG_URL="https://raw.githubusercontent.com/JuanM2209/agent-fix/master/agent.toml"
 TMP_CONFIG="/tmp/agent.toml"
 
 echo "=== Nucleus Agent Fix ==="
