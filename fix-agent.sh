@@ -1,67 +1,91 @@
 #!/bin/bash
-# Nucleus Agent Fix v4 — recreate container with token in URL
+# Nucleus Agent Reinstall v0.18.0
+# Downloads from GitHub releases and installs with correct DEVICE_ID from factory file
 # Usage: curl -sL https://raw.githubusercontent.com/JuanM2209/agent-fix/master/fix-agent.sh | bash
 
-CONTAINER="remote-s"
-DEVICE_UUID="26902cd6-b72b-496e-9326-59517775a95b"
+set -e
 
-echo "=== Nucleus Agent Fix v4 ==="
+RELEASE_URL="https://github.com/JuanM2209/nucleus-agent-releases/releases/download/v0.18.0/nucleus-agent-r18.tar.gz"
+IMAGE_NAME="nucleus-agent:r18"
+CONTAINER_NAME="remote-s"
+FACTORY_FILE="/data/nucleus/factory/nucleus_serial_number"
+CONTROL_PLANE="wss://api.datadesng.com/ws/agent"
+
+echo "=== Nucleus Agent v0.18.0 Reinstall ==="
 echo ""
 
-# 1. Get current container config
-echo "[1/5] Reading current container config..."
-IMAGE=$(docker inspect "$CONTAINER" --format '{{.Config.Image}}')
-echo "  Image: $IMAGE"
+# 1. Read device serial from factory file
+echo "[1/6] Reading device serial..."
+if [ -f "$FACTORY_FILE" ]; then
+  DEVICE_SERIAL=$(cat "$FACTORY_FILE" | tr -d '[:space:]')
+  echo "  -> Serial: $DEVICE_SERIAL"
+else
+  echo "  ERROR: Factory file not found at $FACTORY_FILE"
+  echo "  Please enter device serial manually:"
+  read -r DEVICE_SERIAL
+fi
 
-# Get all current env vars
-echo "  Current env vars:"
-docker exec "$CONTAINER" env | grep -v "^PATH=" | grep -v "^HOME="
-
-# Get network mode
-NETWORK=$(docker inspect "$CONTAINER" --format '{{.HostConfig.NetworkMode}}')
-echo "  Network: $NETWORK"
-
-# Get restart policy
-RESTART=$(docker inspect "$CONTAINER" --format '{{.HostConfig.RestartPolicy.Name}}')
-echo "  Restart: $RESTART"
-
+# 2. Stop and remove ALL agent containers (old and new)
 echo ""
-echo "[2/5] Stopping old container..."
-docker stop "$CONTAINER"
-docker rename "$CONTAINER" "${CONTAINER}-backup"
-echo "  -> Old container renamed to ${CONTAINER}-backup"
+echo "[2/6] Cleaning up old containers..."
+for c in remote-s remote-s-backup remote-support; do
+  if docker ps -a --format '{{.Names}}' | grep -q "^${c}$"; then
+    echo "  Stopping $c..."
+    docker stop "$c" 2>/dev/null || true
+    docker rm "$c" 2>/dev/null || true
+    echo "  -> Removed $c"
+  fi
+done
 
+# 3. Remove old image
 echo ""
-echo "[3/5] Creating new container with token in URL..."
+echo "[3/6] Removing old image..."
+docker rmi "$IMAGE_NAME" 2>/dev/null || true
+
+# 4. Download fresh image from GitHub releases
+echo ""
+echo "[4/6] Downloading $IMAGE_NAME from GitHub releases..."
+curl -sL "$RELEASE_URL" -o /tmp/nucleus-agent-r18.tar.gz
+echo "  -> Downloaded $(du -h /tmp/nucleus-agent-r18.tar.gz | cut -f1)"
+
+# 5. Load image
+echo ""
+echo "[5/6] Loading Docker image..."
+docker load -i /tmp/nucleus-agent-r18.tar.gz
+rm -f /tmp/nucleus-agent-r18.tar.gz
+
+# 6. Create and start container
+echo ""
+echo "[6/6] Creating container..."
 docker run -d \
-  --name "$CONTAINER" \
-  --hostname N-1065 \
-  --network "$NETWORK" \
-  --restart "${RESTART:-unless-stopped}" \
-  -e "DEVICE_ID=N-1065" \
+  --name "$CONTAINER_NAME" \
+  --hostname "$DEVICE_SERIAL" \
+  --network host \
+  --restart unless-stopped \
+  --privileged \
+  -v /dev:/dev \
+  -v /data/nucleus:/data/nucleus:ro \
+  -e "DEVICE_ID=$DEVICE_SERIAL" \
   -e "TENANT_ID=559e8400-e29b-41d4-a716-446655440000" \
   -e "AGENT_SECRET=2hRL/Js4yUi/Gm/8VFyhwhdkXFQ+Jsr5lXSaAhXFVk3Qr3udXTZXHDdaG4NdKw5" \
-  -e "CONTROL_PLANE_URL=wss://api.datadesng.com/ws/agent?token=${DEVICE_UUID}" \
-  "$IMAGE"
+  -e "CONTROL_PLANE_URL=${CONTROL_PLANE}?token=26902cd6-b72b-496e-9326-59517775a95b" \
+  -e "MBUSD_BINARY_PATH=/usr/bin/mbusd" \
+  "$IMAGE_NAME"
 
-echo "  -> New container created"
+echo "  -> Container created"
 
+# Wait and show logs
 echo ""
-echo "[4/5] Verifying new config..."
-echo "  New CONTROL_PLANE_URL:"
-docker exec "$CONTAINER" printenv CONTROL_PLANE_URL
-
-echo ""
-echo "[5/5] Waiting 5s for connection..."
-sleep 5
-echo ""
-echo "=== Recent logs ==="
-docker logs --tail 20 "$CONTAINER"
+echo "Waiting 8s for startup..."
+sleep 8
 
 echo ""
-echo "=== Done! Check portal — device should be ONLINE ==="
+echo "=== Container Status ==="
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" | grep "$CONTAINER_NAME"
+
 echo ""
-echo "If something went wrong, restore with:"
-echo "  docker stop $CONTAINER && docker rm $CONTAINER"
-echo "  docker rename ${CONTAINER}-backup $CONTAINER"
-echo "  docker start $CONTAINER"
+echo "=== Recent Logs ==="
+docker logs --tail 15 "$CONTAINER_NAME"
+
+echo ""
+echo "=== Done! Agent v0.18.0 reinstalled ==="
